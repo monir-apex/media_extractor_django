@@ -1,0 +1,124 @@
+{% extends "photos/base.html" %}
+
+{% block title %}Downloading photos · Photo Bucketing{% endblock %}
+
+{% block styles %}
+    .card { max-width: 640px; margin: 48px auto 0; background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 24px; }
+    .card h1 { margin-bottom: 4px; }
+    .source { margin: 0 0 24px; font-size: 14px; word-break: break-all; }
+    .numbers { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .percent { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .count { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .bar { position: relative; height: 10px; margin: 10px 0 12px; overflow: hidden;
+           background: var(--border); border-radius: 999px; }
+    .bar-fill { height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width .4s ease; }
+    .bar.indeterminate .bar-fill { width: 30%; position: absolute; animation: slide 1.4s ease-in-out infinite; }
+    @keyframes slide { from { left: -30%; } to { left: 100%; } }
+    @media (prefers-reduced-motion: reduce) {
+      .bar.indeterminate .bar-fill { animation: none; left: 0; width: 100%; opacity: .35; }
+    }
+    .stage { margin: 0; font-size: 14px; }
+    .checked { margin: 4px 0 0; font-size: 13px; }
+    .error-details { font-size: 13px; margin: 4px 0 0; padding-left: 20px; word-break: break-all; }
+    .back { display: inline-block; margin-top: 8px; }
+    .retry { margin-top: 16px; }
+{% endblock %}
+
+{% block content %}
+  <a class="back" href="{% url 'gallery' %}">← All photos</a>
+  <div class="card" id="job" data-status-url="{% url 'download-job-status' job.pk %}"
+       data-page-url="{% url 'download-job' job.pk %}">
+    <h1 id="title">{% if job.status == "failed" %}Download failed{% else %}Downloading photos{% endif %}</h1>
+    <p class="source muted">{{ job.source_url }}</p>
+
+    <div id="progress" {% if job.status == "failed" %}hidden{% endif %}>
+      <div class="numbers">
+        <span class="percent" id="percent">{% if job.percent is not None %}{{ job.percent }}%{% endif %}</span>
+        <span class="count" id="count" aria-live="polite">
+          {% if job.limit %}{{ job.saved }} of {{ job.limit }} photo{{ job.limit|pluralize }}{% else %}{{ job.saved }} photo{{ job.saved|pluralize }}{% endif %} downloaded
+        </span>
+      </div>
+      <div class="bar{% if job.percent is None %} indeterminate{% endif %}" id="bar" role="progressbar"
+           aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"
+           {% if job.percent is not None %}aria-valuenow="{{ job.percent }}"{% endif %}>
+        <div class="bar-fill" id="bar-fill" {% if job.percent is not None %}style="width: {{ job.percent }}%"{% endif %}></div>
+      </div>
+      <p class="stage muted" id="stage">{{ job.stage|default:"Starting…" }}</p>
+      <p class="checked muted" id="checked" {% if not job.found %}hidden{% endif %}>
+        Checked {{ job.checked }} of {{ job.found }} images
+      </p>
+    </div>
+
+    <div id="failure" {% if job.status != "failed" %}hidden{% endif %}>
+      <div class="message error">
+        <span id="error">{{ job.error }}</span>
+        <ul class="error-details" id="details">{% for detail in job.details %}<li>{{ detail }}</li>{% endfor %}</ul>
+      </div>
+      <a class="button retry" href="{{ retry_url }}">Try again</a>
+    </div>
+
+    <noscript><meta http-equiv="refresh" content="3"></noscript>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (() => {
+    const root = document.getElementById('job');
+    const $ = (id) => document.getElementById(id);
+    const plural = (n) => (n === 1 ? '' : 's');
+    const number = (n) => n.toLocaleString();
+
+    function render(job) {
+      if (job.status === 'done') {
+        $('percent').textContent = '100%';
+        $('bar').classList.remove('indeterminate');
+        $('bar-fill').style.width = '100%';
+        // The job page sends us on to the new photos in the gallery.
+        window.location.replace(root.dataset.pageUrl);
+        return true;
+      }
+      if (job.status === 'failed') {
+        $('title').textContent = 'Download failed';
+        $('progress').hidden = true;
+        $('failure').hidden = false;
+        $('error').textContent = job.error;
+        $('details').replaceChildren(...job.details.map((d) => Object.assign(document.createElement('li'), { textContent: d })));
+        return true;
+      }
+
+      const bar = $('bar');
+      if (job.percent === null) {
+        bar.classList.add('indeterminate');
+        bar.removeAttribute('aria-valuenow');
+        $('percent').textContent = '';
+        $('bar-fill').style.width = '';
+      } else {
+        bar.classList.remove('indeterminate');
+        bar.setAttribute('aria-valuenow', job.percent);
+        $('percent').textContent = `${job.percent}%`;
+        $('bar-fill').style.width = `${job.percent}%`;
+      }
+      $('count').textContent = job.limit
+        ? `${number(job.saved)} of ${number(job.limit)} photo${plural(job.limit)} downloaded`
+        : `${number(job.saved)} photo${plural(job.saved)} downloaded`;
+      $('stage').textContent = job.stage || 'Starting…';
+      $('checked').hidden = !job.found;
+      $('checked').textContent = `Checked ${number(job.checked)} of ${number(job.found)} images`;
+      return false;
+    }
+
+    async function poll() {
+      try {
+        const response = await fetch(root.dataset.statusUrl, { headers: { Accept: 'application/json' } });
+        if (response.ok && render(await response.json())) return;
+      } catch (error) {
+        // Network hiccup: keep trying.
+      }
+      setTimeout(poll, 1000);
+    }
+    {% if not job.finished %}poll();{% endif %}
+  })();
+</script>
+{% endblock %}

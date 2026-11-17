@@ -1,0 +1,80 @@
+{% extends "photos/base.html" %}
+
+{% block title %}Add shared link · Photo Bucketing{% endblock %}
+
+{% block styles %}
+    .card { max-width: 640px; margin: 48px auto 0; background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 24px; }
+    .card h1 { margin-bottom: 4px; }
+    .card > p { margin: 0 0 20px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    input[type=url], input[type=number] { width: 100%; padding: 10px 12px; font: inherit; color: var(--text);
+                      background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+    input[type=number] { max-width: 220px; }
+    input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    .field + .field { margin-top: 16px; }
+    .hint { font-size: 13px; margin: 6px 0 0; }
+    .form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-top: 16px; }
+    .sources { margin: 24px 0 0; padding: 16px 0 0; border-top: 1px solid var(--border); font-size: 14px; }
+    .sources ul { margin: 6px 0 0; padding-left: 20px; }
+    .error-details { font-size: 13px; margin: 4px 0 0; padding-left: 20px; word-break: break-all; }
+    .back { display: inline-block; margin-top: 8px; }
+{% endblock %}
+
+{% block content %}
+  <a class="back" href="{% url 'gallery' %}">← All photos</a>
+  <div class="card">
+    <h1>Add shared link</h1>
+    <p class="muted">Every photo behind the link is downloaded and saved, then shown in the gallery.</p>
+
+    {% if error %}
+      <div class="message error">
+        {{ error }}
+        {% if details %}
+          <ul class="error-details">{% for detail in details %}<li>{{ detail }}</li>{% endfor %}</ul>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <form method="post" id="add-link-form">
+      {% csrf_token %}
+      <div class="field">
+        <label for="url">Shared link</label>
+        <input type="url" id="url" name="url" value="{{ url }}" required autofocus
+               placeholder="https://drive.google.com/drive/folders/…">
+      </div>
+      <div class="field">
+        <label for="limit">Photo limit</label>
+        <input type="number" id="limit" name="limit" value="{{ limit }}" min="1" max="{{ max_photos }}"
+               step="1" inputmode="numeric" placeholder="All photos" aria-describedby="limit-hint">
+        <p class="hint muted" id="limit-hint">The most photos to download. Leave empty for all (up to {{ max_photos_display }}).</p>
+      </div>
+      <div class="form-actions">
+        <button class="button" type="submit">Download photos</button>
+      </div>
+    </form>
+
+    <div class="sources muted">
+      Supported links:
+      <ul>
+        <li>Google Drive: shared folder or file (“Anyone with the link”)</li>
+        <li>Dropbox: shared folder or file</li>
+        <li>Google Photos: shared album</li>
+        <li>MEGA: shared folder or file (the link must include the key after “#”)</li>
+        <li>OneDrive: shared folder or file (“Anyone with the link”)</li>
+        <li>Any other web page, including JavaScript galleries: the photos on the page are downloaded</li>
+      </ul>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Checking the link takes a moment before the progress page opens.
+  document.getElementById('add-link-form').addEventListener('submit', (event) => {
+    const button = event.target.querySelector('button');
+    button.disabled = true;
+    button.textContent = 'Starting…';
+  });
+</script>
+{% endblock %}

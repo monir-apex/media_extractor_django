@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Photo Bucketing{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #f6f6f4; --surface: #ffffff; --text: #1d1d1b; --muted: #6b6b66;
+      --border: #e2e2dd; --accent: #2f5d50; --accent-text: #ffffff;
+      --error-bg: #fbeaea; --error-text: #8a1f1f; --ok-bg: #e6f2ec; --ok-text: #1f5a3d;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #161615; --surface: #1f1f1d; --text: #ecece8; --muted: #9a9a94;
+        --border: #33332f; --accent: #7fb8a4; --accent-text: #10201b;
+        --error-bg: #3a1c1c; --error-text: #f3b4b4; --ok-bg: #1b3328; --ok-text: #a8dcc0;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 64px; }
+    header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+    h1 { margin: 0; font-size: 24px; }
+    .muted { color: var(--muted); }
+    a { color: var(--accent); }
+    .button { display: inline-block; padding: 10px 18px; font: inherit; font-weight: 600; border: 0; border-radius: 8px;
+              background: var(--accent); color: var(--accent-text); cursor: pointer; text-decoration: none; }
+    .button[disabled] { opacity: .6; cursor: progress; }
+    .button.danger { background: transparent; color: var(--error-text); border: 1px solid currentColor; }
+    .button.danger:hover { background: var(--error-bg); }
+    .actions { display: flex; align-items: center; gap: 16px; }
+    .message { padding: 10px 14px; border-radius: 8px; margin: 16px 0 8px; }
+    .message.error { background: var(--error-bg); color: var(--error-text); }
+    .message.success { background: var(--ok-bg); color: var(--ok-text); }
+    .message.info { background: var(--surface); border: 1px solid var(--border); }
+    .avatar { flex-shrink: 0; border-radius: 50%; object-fit: cover; display: inline-grid; place-items: center;
+              background: var(--border); color: var(--muted); font-weight: 700; overflow: hidden; }
+    {% block styles %}{% endblock %}
+  </style>
+</head>
+<body>
+<main>
+  {% for message in messages %}
+    <div class="message {{ message.tags }}">{{ message }}</div>
+  {% endfor %}
+  {% block content %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,262 @@
+{% extends "photos/base.html" %}
+{% load humanize %}
+
+{% block styles %}
+    section.batch { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+                    padding: 16px; margin-top: 20px; }
+    .batch-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-bottom: 12px; }
+    .batch-head a.source { font-weight: 600; color: var(--text); word-break: break-all; }
+    .tag { font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--border); color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+    figure { margin: 0; }
+    figure a.thumb { position: relative; display: block; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--border); }
+    figure img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .placeholder { height: 100%; display: grid; place-items: center; color: var(--muted); font-size: 13px; text-align: center; padding: 8px; }
+    figcaption { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; color: var(--muted); margin-top: 4px; }
+    figcaption span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    figcaption a { color: var(--accent); flex-shrink: 0; }
+    details { margin-top: 12px; font-size: 13px; color: var(--muted); }
+    details li { word-break: break-all; }
+    .empty { text-align: center; padding: 64px 0; }
+    .profile-link { display: inline-flex; align-items: center; gap: 8px; color: var(--text); text-decoration: none;
+                    font-weight: 600; }
+    .profile-link:hover span { text-decoration: underline; }
+    nav.pages { display: flex; justify-content: center; gap: 16px; margin-top: 24px; }
+    nav.pages a { color: var(--accent); }
+    dialog { border: 0; padding: 0; background: transparent; max-width: 95vw; max-height: 95vh; }
+    dialog::backdrop { background: rgba(0, 0, 0, .85); }
+    dialog img { max-width: 95vw; max-height: 90vh; display: block; border-radius: 6px; }
+    .viewer-frame { position: relative; width: fit-content; margin: 0 auto; }
+    .face-box { position: absolute; border: 3px solid #f2c94c; border-radius: 6px; box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+    .face-box.is-match { border-color: #4cd18a; }
+    .face-box span { position: absolute; left: -3px; bottom: 100%; margin-bottom: 4px; padding: 1px 6px; white-space: nowrap;
+                     border-radius: 4px; font-size: 13px; font-weight: 700; background: #f2c94c; color: #1d1d1b; }
+    .face-box.is-match span { background: #4cd18a; }
+    .match-badge { position: absolute; top: 6px; left: 6px; padding: 1px 7px; border-radius: 99px; font-size: 12px;
+                   font-weight: 700; font-variant-numeric: tabular-nums; background: rgba(0,0,0,.6); color: #fff; }
+    .match-badge.is-match { background: #1f7a4d; }
+    .match-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+                   margin-top: 20px; }
+    .match-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+    .match-row p { margin: 0; }
+    .tabs { display: flex; gap: 4px; padding: 3px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); }
+    .tabs a { padding: 5px 12px; border-radius: 7px; color: var(--text); text-decoration: none; font-size: 14px; font-weight: 600; }
+    .tabs a[aria-current] { background: var(--accent); color: var(--accent-text); }
+    .bar { height: 8px; margin: 10px 0 6px; overflow: hidden; background: var(--border); border-radius: 999px; }
+    .bar-fill { height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width .4s ease; }
+    .match-error { color: var(--error-text); }
+    .flat-grid { margin-top: 20px; }
+    dialog p { color: #ddd; text-align: center; margin: 8px 0 0; font-size: 13px; }
+{% endblock %}
+
+{% block content %}
+  <header>
+    <h1>Photo Bucketing</h1>
+    <div class="actions">
+      <a class="profile-link" href="{% url 'profile' %}" title="Edit profile">
+        {% include "photos/_avatar.html" with size=36 %}
+        <span>{{ profile.display_name|default:"Profile" }}</span>
+      </a>
+      <span class="muted">{{ totals.count|default:0 }} photo{{ totals.count|pluralize }} · {{ totals.size|default:0|filesizeformat }}</span>
+      <a class="button" href="{% url 'add-link' %}">+ Add shared link</a>
+      {% if totals.count %}
+        <form method="post" action="{% url 'match-sync' %}" id="sync-form">
+          {% csrf_token %}
+          <button class="button" type="submit" id="sync-button"
+                  {% if match_job and not match_job.finished %}disabled{% endif %}
+                  title="Find {{ profile.display_name|default:'the profile' }}'s face in every photo">Sync face match</button>
+        </form>
+      {% endif %}
+      {% if totals.count %}
+        <form method="post" action="{% url 'delete-all' %}" id="delete-all-form">
+          {% csrf_token %}
+          <button class="button danger" type="submit">Delete all photos</button>
+        </form>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if totals.count %}
+    <section class="match-panel" id="match-panel"
+             {% if match_job %}data-status-url="{% url 'match-job-status' match_job.pk %}"{% endif %}
+             data-sync-url="{% url 'match-sync' %}">
+      <div class="match-row">
+        <p id="match-summary" aria-live="polite">
+          {% if not profile.has_photo %}
+            <a href="{% url 'profile' %}">Add a profile photo</a> to find your face in these photos.
+          {% elif not match_job %}
+            Press <strong>Sync face match</strong> to find {{ profile.display_name|default:"your" }}{% if profile.display_name %}'s{% endif %} face in these photos.
+          {% elif not match_job.finished %}
+            <span id="match-stage">{{ match_job.stage|default:"Starting…" }}</span>
+          {% elif match_job.status == "failed" %}
+            <span class="match-error">Face match failed: {{ match_job.error }}</span>
+          {% else %}
+            <strong>{{ match_count }} photo{{ match_count|pluralize }}</strong> match{{ match_count|pluralize:"es," }}
+            {{ profile.display_name|default:"the profile" }} ({{ match_percent }}% or more)
+            <span class="muted">· {{ match_job.photos_with_faces }} of {{ match_job.total_photos }} photo{{ match_job.total_photos|pluralize }} have faces
+            · synced {{ match_job.updated_at|naturaltime }}{% if unscanned_count %} · {{ unscanned_count }} new photo{{ unscanned_count|pluralize }} not scanned yet{% endif %}</span>
+          {% endif %}
+        </p>
+        <nav class="tabs" aria-label="Photo filter">
+          <a href="{% url 'gallery' %}" {% if view == "all" %}aria-current="page"{% endif %}>All photos</a>
+          <a href="{% url 'gallery' %}?view=matches" {% if view == "matches" %}aria-current="page"{% endif %}>Matches ({{ match_count }})</a>
+        </nav>
+      </div>
+      <div id="match-progress" {% if not match_job or match_job.finished %}hidden{% endif %}>
+        <div class="bar" role="progressbar" aria-label="Face match progress" aria-valuemin="0" aria-valuemax="100">
+          <div class="bar-fill" id="match-bar" style="width: {{ match_job.percent|default:0 }}%"></div>
+        </div>
+      </div>
+    </section>
+  {% endif %}
+
+  {% if view == "matches" %}
+    {% if page.object_list %}
+      <div class="grid flat-grid">
+        {% for photo in page %}{% include "photos/_photo.html" %}{% endfor %}
+      </div>
+    {% else %}
+      <p class="empty muted">No matching photos yet.{% if profile.has_photo %} Press <strong>Sync face match</strong> to look for {{ profile.display_name|default:"your" }}{% if profile.display_name %}'s{% endif %} face.{% endif %}</p>
+    {% endif %}
+  {% else %}
+  {% for batch in page %}
+    <section class="batch" id="batch-{{ batch.pk }}">
+      <div class="batch-head">
+        <a class="source" href="{{ batch.source_url }}" target="_blank" rel="noopener noreferrer">{{ batch.source_url|truncatechars:90 }}</a>
+        <span class="tag">{{ batch.get_provider_display }}</span>
+        <span class="muted">{{ batch.photo_count }} photo{{ batch.photo_count|pluralize }} · {{ batch.total_size|default:0|filesizeformat }} · {{ batch.created_at|naturaltime }}</span>
+      </div>
+      <div class="grid">
+        {% for photo in batch.photos.all %}{% include "photos/_photo.html" %}{% endfor %}
+      </div>
+      {% if batch.errors %}
+        <details>
+          <summary>{{ batch.errors|length }} item{{ batch.errors|pluralize }} skipped</summary>
+          <ul>{% for error in batch.errors %}<li>{{ error }}</li>{% endfor %}</ul>
+        </details>
+      {% endif %}
+    </section>
+  {% empty %}
+    <p class="empty muted">No photos yet. <a href="{% url 'add-link' %}">Add a shared link</a> to download some.</p>
+  {% endfor %}
+  {% endif %}
+
+  {% if page.has_other_pages %}
+    <nav class="pages">
+      {% if view == "matches" %}
+        {% if page.has_previous %}<a href="?view=matches&amp;page={{ page.previous_page_number }}">← Better matches</a>{% endif %}
+        <span class="muted">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+        {% if page.has_next %}<a href="?view=matches&amp;page={{ page.next_page_number }}">More →</a>{% endif %}
+      {% else %}
+        {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">← Newer</a>{% endif %}
+        <span class="muted">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+        {% if page.has_next %}<a href="?page={{ page.next_page_number }}">Older →</a>{% endif %}
+      {% endif %}
+    </nav>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<dialog id="viewer">
+  <div class="viewer-frame">
+    <img alt="">
+    <div class="face-box" hidden><span></span></div>
+  </div>
+  <p></p>
+</dialog>
+
+<script>
+  const viewer = document.getElementById('viewer');
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest('a[data-preview]');
+    if (!link) return;
+    event.preventDefault();
+    viewer.querySelector('img').src = link.dataset.preview;
+    viewer.querySelector('p').textContent = link.dataset.name;
+    // Outline the face that best matches the profile.
+    const box = viewer.querySelector('.face-box');
+    box.hidden = !link.dataset.face;
+    if (link.dataset.face) {
+      const [left, top, width, height] = link.dataset.face.split(' ');
+      Object.assign(box.style, { left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%` });
+      box.classList.toggle('is-match', 'match' in link.dataset);
+      box.querySelector('span').textContent = `${link.dataset.percent}% match`;
+    }
+    viewer.showModal();
+  });
+  viewer.addEventListener('click', () => viewer.close());
+
+  // Face-match sync: start it without leaving the page, show progress, reload when done.
+  (() => {
+    const panel = document.getElementById('match-panel');
+    const form = document.getElementById('sync-form');
+    if (!panel || !form) return;
+    const button = document.getElementById('sync-button');
+    const summary = document.getElementById('match-summary');
+    const progress = document.getElementById('match-progress');
+    const bar = document.getElementById('match-bar');
+
+    function showStage(text) {
+      summary.replaceChildren(Object.assign(document.createElement('span'), { textContent: text }));
+    }
+    function showError(text) {
+      summary.replaceChildren(Object.assign(document.createElement('span'), { className: 'match-error', textContent: text }));
+      progress.hidden = true;
+      button.disabled = false;
+    }
+    function render(job) {
+      if (job.status === 'done') {
+        bar.style.width = '100%';
+        window.location.reload();
+        return true;
+      }
+      if (job.status === 'failed') {
+        showError(`Face match failed: ${job.error}`);
+        return true;
+      }
+      progress.hidden = false;
+      button.disabled = true;
+      bar.style.width = `${job.percent || 0}%`;
+      showStage(`${job.percent || 0}% · ${job.stage || 'Starting…'}`);
+      return false;
+    }
+    async function poll(url) {
+      try {
+        const response = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (response.ok && render(await response.json())) return;
+      } catch (error) {
+        // Network hiccup: keep trying.
+      }
+      setTimeout(() => poll(url), 1000);
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      button.disabled = true;
+      showStage('Starting…');
+      try {
+        const response = await fetch(form.action, {
+          method: 'POST', body: new FormData(form), headers: { Accept: 'application/json' },
+        });
+        const job = await response.json();
+        if (!response.ok) return showError(job.error || 'Could not start the sync.');
+        const url = `{% url 'match-job-status' '00000000-0000-0000-0000-000000000000' %}`.replace('00000000-0000-0000-0000-000000000000', job.id);
+        if (!render(job)) poll(url);
+      } catch (error) {
+        showError('Could not start the sync. Please try again.');
+      }
+    });
+
+    {% if match_job and not match_job.finished %}poll(panel.dataset.statusUrl);{% endif %}
+  })();
+
+  const deleteAll = document.getElementById('delete-all-form');
+  if (deleteAll) {
+    deleteAll.addEventListener('submit', (event) => {
+      if (!confirm('Delete all {{ totals.count }} photo{{ totals.count|pluralize }}? This cannot be undone.')) {
+        event.preventDefault();
+      }
+    });
+  }
+</script>
+{% endblock %}
